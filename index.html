@@ -575,11 +575,10 @@ function renderGood(){
     row.innerHTML='<div class="n">'+(i+1)+'</div>';
     var ta=document.createElement("textarea");
     ta.rows=1; ta.value=val; ta.placeholder=ph[i]||"";
-    function fit(){ ta.style.height="auto"; ta.style.height=(ta.scrollHeight)+"px"; }
     ta.addEventListener("input",function(){
-      fit(); getEntry(cur).good[i]=ta.value; queueSave(); refreshPoints();
+      fitBox(ta); getEntry(cur).good[i]=ta.value; queueSave(); refreshPoints();
     });
-    row.appendChild(ta); box.appendChild(row); fit();
+    row.appendChild(ta); box.appendChild(row); fitBox(ta);
   });
 }
 var NOTE_LIMIT=500;
@@ -590,8 +589,14 @@ function renderNote(){
 }
 function fitNote(){
   var ta=document.getElementById("noteBox");
+  if(ta.offsetParent===null) return;      /* 非表示のときは測らない（潰れるため） */
   ta.style.height="auto";
   ta.style.height=Math.max(112, ta.scrollHeight)+"px";
+}
+function fitBox(ta){
+  if(ta.offsetParent===null) return;
+  ta.style.height="auto";
+  ta.style.height=Math.max(28, ta.scrollHeight)+"px";
 }
 function updateCounter(){
   var n=document.getElementById("noteBox").value.length;
@@ -680,7 +685,7 @@ function renderCal(){
       c.innerHTML='<span>'+d+'</span><span class="dot '+lvl+'"></span>';
       if(!isRecorded(e)) c.querySelector(".dot").classList.add("none");
       c.addEventListener("click",function(){
-        cur=ds; renderCal(); renderToday(); switchView("today"); toast((m+1)+"月"+d+"日を開きました");
+        cur=ds; switchView("today"); toast((m+1)+"月"+d+"日を開きました");
       });
       grid.appendChild(c);
     })(d);
@@ -700,7 +705,7 @@ function renderCal(){
     el.innerHTML='<div class="dt" style="flex:none;width:34px">'+(m2+1)+'/'+dd+'</div>'+
       '<div class="nm" style="font-size:13px;line-height:1.6">'+esc(line)+'</div>'+
       (hasNote(e)?'<span class="dt" title="自由欄あり" style="flex:none">✎</span>':'');
-    (function(ds){ el.style.cursor="pointer"; el.addEventListener("click",function(){ cur=ds; renderToday(); switchView("today"); }); })(ds);
+    (function(ds){ el.style.cursor="pointer"; el.addEventListener("click",function(){ cur=ds; switchView("today"); }); })(ds);
     box.appendChild(el);
   }
   if(!found) box.innerHTML='<p class="empty">この月にはまだ記録がありません</p>';
@@ -867,13 +872,20 @@ function bindCfg(id,key,min){
 }
 
 /* ---------- views ---------- */
+var curView="today";
 function switchView(v){
+  curView=v;
+  /* 先に表示を切り替えてから描画する（隠れたままだと高さを測れないため） */
   document.querySelectorAll(".view").forEach(function(s){ s.classList.toggle("on", s.id==="v-"+v); });
   document.querySelectorAll(".tab").forEach(function(t){ t.classList.toggle("on", t.dataset.v===v); });
-  if(v==="cal") renderCal();
-  if(v==="gacha"){ renderHist(); refreshPoints(); }
-  if(v==="set") renderSettings();
+  renderView(v);
   window.scrollTo(0,0);
+}
+function renderView(v){
+  if(v==="today"){ renderToday(); }
+  else if(v==="cal"){ renderCal(); refreshPoints(); }
+  else if(v==="gacha"){ renderHist(); refreshPoints(); }
+  else if(v==="set"){ renderSettings(); renderSaveStatus(); renderAutoInfo(); refreshPoints(); }
 }
 
 /* ---------- events ---------- */
@@ -934,10 +946,22 @@ document.getElementById("fsBtn").addEventListener("click",function(){
       });
     }).catch(function(){});
 });
+var bootDay=todayStr();
+function onResume(){
+  var t=todayStr();
+  if(t!==bootDay){
+    if(cur===bootDay) cur=t;    /* 日付が変わったら「今日」に追従する */
+    bootDay=t;
+  }
+  renderView(curView);          /* 戻ってきたら今の画面を描き直す */
+}
 document.addEventListener("visibilitychange",function(){
   if(document.visibilityState==="hidden"){ clearTimeout(saveT); save(); autoSave(true); }
+  else { onResume(); }
 });
+window.addEventListener("pageshow",function(){ if(ready) onResume(); });
 window.addEventListener("pagehide",function(){ autoSave(true); });
+window.addEventListener("orientationchange",function(){ setTimeout(function(){ if(curView==="today") renderToday(); },250); });
 document.getElementById("impBtn").addEventListener("click",function(){ document.getElementById("impFile").click(); });
 document.getElementById("impFile").addEventListener("change",function(){
   var f=this.files&&this.files[0]; if(!f) return;
