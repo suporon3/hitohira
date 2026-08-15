@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ひとひら — 日記と習慣</title>
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#faf8f4">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -145,6 +145,24 @@ textarea::placeholder,input::placeholder{color:#c7bfb4}
 .cell.sel .dot{background:#fff}
 .cell .dot.l2{opacity:.6}.cell .dot.l3{opacity:1}
 .cell .dot.none{background:transparent}
+/* habit stats */
+.hs{padding:13px 0;border-bottom:1px solid var(--line2)}
+.hs:first-child{padding-top:0}
+.hs:last-child{border-bottom:0;padding-bottom:0}
+.hs-top{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+.hs-nm{flex:1;font-size:14px;min-width:0}
+.hs-streak{font-size:10.5px;color:var(--accent);background:var(--accent-soft);border-radius:99px;padding:2px 8px;margin-left:7px;white-space:nowrap}
+.hs-ct{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.hs-ct small{font-size:11px;color:var(--ink3);font-weight:400}
+.hs-pc{font-size:11.5px;color:var(--ink3);width:34px;text-align:right;font-variant-numeric:tabular-nums}
+.hs-bar{height:4px;background:var(--line2);border-radius:99px;overflow:hidden}
+.hs-bar i{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .35s ease}
+.strip{display:flex;gap:2px;margin-top:8px}
+.strip span{flex:1;height:15px;border-radius:3px;background:#eae4da}
+.strip span.on{background:var(--accent)}
+.strip span.fut{background:transparent;box-shadow:inset 0 0 0 1px var(--line2)}
+.hs-none{font-size:11.5px;color:var(--ink3)}
+
 .legend{display:flex;gap:14px;justify-content:center;margin-top:14px;font-size:11px;color:var(--ink3);flex-wrap:wrap}
 .legend i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:5px;vertical-align:middle}
 
@@ -305,6 +323,12 @@ code{background:#fff;border:1px solid #e4d9bd;border-radius:5px;padding:1px 5px;
         <span><i></i>すべて達成</span>
       </div>
     </div>
+    <div class="card">
+      <h2>習慣別の達成<span class="hint" id="hsRate"></span></h2>
+      <div id="habitStats"></div>
+      <p class="hint" style="margin-top:12px">下の帯は1日ずつの記録です。左が1日、右が月末。</p>
+    </div>
+
     <div class="card">
       <h2>この月のふりかえり</h2>
       <div id="monthList"></div>
@@ -661,6 +685,7 @@ function renderCal(){
       grid.appendChild(c);
     })(d);
   }
+  renderHabitStats(y,m);
   // month review
   var y2=y,m2=m, box=document.getElementById("monthList"); box.innerHTML="";
   var found=0;
@@ -679,6 +704,55 @@ function renderCal(){
     box.appendChild(el);
   }
   if(!found) box.innerHTML='<p class="empty">この月にはまだ記録がありません</p>';
+}
+
+/* ---------- habit stats ---------- */
+function habitStreak(id){
+  var n=0, d=new Date();
+  var e0=peek(ymd(d));
+  if(!(e0&&e0.habits&&e0.habits[id])) d.setDate(d.getDate()-1);
+  while(true){
+    var e=peek(ymd(d));
+    if(e&&e.habits&&e.habits[id]){ n++; d.setDate(d.getDate()-1); } else break;
+  }
+  return n;
+}
+function renderHabitStats(y,m){
+  var box=document.getElementById("habitStats"); box.innerHTML="";
+  var rateEl=document.getElementById("hsRate");
+  if(!S.habits.length){ box.innerHTML='<p class="empty">設定タブから習慣を追加できます</p>'; rateEl.textContent=""; return; }
+  var last=new Date(y,m+1,0).getDate();
+  var now=new Date(), isCur=(y===now.getFullYear()&&m===now.getMonth());
+  var future=(y>now.getFullYear())||(isCur===false&&y===now.getFullYear()&&m>now.getMonth());
+  var upto=isCur?now.getDate():(future?0:last);
+  var sumDone=0, sumPos=0;
+
+  S.habits.forEach(function(h){
+    var done=0, cells="";
+    for(var d=1;d<=last;d++){
+      var e=peek(ymd(new Date(y,m,d)));
+      var on=!!(e&&e.habits&&e.habits[h.id]);
+      if(on) done++;
+      cells+='<span class="'+(on?"on":(d>upto?"fut":""))+'" title="'+(m+1)+'/'+d+'"></span>';
+    }
+    sumDone+=done; sumPos+=upto;
+    var pc=upto?Math.round(done/upto*100):0;
+    var st=isCur?habitStreak(h.id):0;
+
+    var el=document.createElement("div"); el.className="hs";
+    el.innerHTML=
+      '<div class="hs-top">'+
+        '<span class="hs-nm">'+esc(h.name)+
+          (st>=2?'<span class="hs-streak">連続 '+st+'日</span>':'')+
+        '</span>'+
+        '<span class="hs-ct">'+done+'<small> / '+(upto||last)+'日</small></span>'+
+        '<span class="hs-pc">'+pc+'%</span>'+
+      '</div>'+
+      '<div class="hs-bar"><i style="width:'+pc+'%"></i></div>'+
+      '<div class="strip">'+cells+'</div>';
+    box.appendChild(el);
+  });
+  rateEl.textContent = sumPos?("全体 "+Math.round(sumDone/sumPos*100)+"%"):"";
 }
 
 /* ---------- gacha ---------- */
