@@ -107,6 +107,26 @@ textarea::placeholder,input::placeholder{color:#c7bfb4}
 .habit .cue::before{content:"↳ ";opacity:.6}
 .habit .wk{font-size:11px;color:var(--ink3);border:1px solid var(--line);border-radius:99px;padding:2px 8px}
 .habit .wk.done{color:var(--accent);border-color:#cfdcd7;background:var(--accent-soft)}
+.habit .p{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.amt{
+  font:inherit;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;
+  color:var(--ink3);background:transparent;border:1px solid var(--line);border-radius:9px;
+  padding:3px 9px;cursor:pointer;line-height:1.5;white-space:nowrap
+}
+.amt.on{color:var(--accent);border-color:#cfdcd7;background:var(--accent-soft)}
+.amt.editing{border-color:var(--accent);background:var(--paper2);padding:2px 6px}
+.amt .u{font-size:10.5px;font-weight:400;margin-left:2px;opacity:.85}
+.amtinp{
+  width:52px;font:inherit;font-size:13px;font-weight:600;text-align:right;
+  border:0 !important;background:transparent;color:var(--ink);outline:none;padding:1px 0 !important;
+  -moz-appearance:textfield
+}
+.amtinp::-webkit-outer-spin-button,.amtinp::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.hs-amt{font-size:11.5px;color:var(--ink3);margin-top:7px}
+.hs-amt b{color:var(--ink2);font-variant-numeric:tabular-nums}
+.hs-goal{margin-left:8px;opacity:.75}
+.funit{flex:1;min-width:90px;font-size:13px !important;border-bottom:1px dotted var(--line) !important}
+.subhint{font-size:10.5px;color:var(--ink3);line-height:1.6;margin:6px 0 0 61px}
 .minibtn{
   flex:none;font:inherit;font-size:11px;color:var(--ink3);background:transparent;border:1px solid var(--line);
   border-radius:99px;padding:4px 10px;cursor:pointer;line-height:1
@@ -554,10 +574,10 @@ function defaults(){
   return {
     v:1,
     habits:[
-      {id:uid(),name:"早起きする",cue:"目覚ましを止めたら、そのまま立ち上がる",mini:"5分だけ早く起きる",freq:{type:"daily"}},
-      {id:uid(),name:"15分歩く",cue:"昼ごはんのあとに",mini:"玄関を出る",freq:{type:"times",n:4}},
-      {id:uid(),name:"本を開く",cue:"寝る前、布団に入ったら",mini:"1ページだけ読む",freq:{type:"daily"}},
-      {id:uid(),name:"水をしっかり飲む",cue:"コーヒーを淹れるついでに",mini:"コップ1杯飲む",freq:{type:"daily"}}
+      {id:uid(),name:"早起きする",cue:"目覚ましを止めたら、そのまま立ち上がる",mini:"5分だけ早く起きる",freq:{type:"daily"},amt:{target:0,unit:""}},
+      {id:uid(),name:"15分歩く",cue:"昼ごはんのあとに",mini:"玄関を出る",freq:{type:"times",n:4},amt:{target:15,unit:"分"}},
+      {id:uid(),name:"本を開く",cue:"寝る前、布団に入ったら",mini:"1ページだけ読む",freq:{type:"daily"},amt:{target:10,unit:"ページ"}},
+      {id:uid(),name:"水をしっかり飲む",cue:"コーヒーを淹れるついでに",mini:"コップ1杯飲む",freq:{type:"daily"},amt:{target:6,unit:"杯"}}
     ],
     rewards:[
       {id:uid(),name:"好きな音楽を1曲ゆっくり聴く",rarity:"N"},
@@ -623,6 +643,7 @@ function getEntry(d){
   while(e.good.length<3) e.good.push("");
   if(!e.habits) e.habits={};
   if(typeof e.note!=="string") e.note="";
+  if(!e.amt||typeof e.amt!=="object") e.amt={};
   return e;
 }
 function peek(d){ return S.entries[d]||null; }
@@ -637,9 +658,37 @@ function hState(e,id){
   if(v==="mini") return "mini";
   return v?"full":"";
 }
+function habitById(id){
+  for(var i=0;i<S.habits.length;i++) if(S.habits[i].id===id) return S.habits[i];
+  return null;
+}
+function hasAmt(h){ return !!(h&&h.amt&&h.amt.target>0); }
+function amtUnit(h){ return (h&&h.amt&&h.amt.unit)||""; }
+function fmtNum(v){
+  if(typeof v!=="number"||isNaN(v)) return "0";
+  return (Math.round(v*10)/10).toString();
+}
+function amtDefault(h,st){
+  if(!hasAmt(h)) return 0;
+  return (st==="mini") ? Math.max(1,Math.round(h.amt.target/2)) : h.amt.target;
+}
+/* その日に記録された量（未入力なら状態に応じた既定値） */
+function amtOf(dateStr,h,st){
+  if(!hasAmt(h)) return 0;
+  var e=peek(dateStr);
+  var v=e&&e.amt?e.amt[h.id]:undefined;
+  if(typeof v==="number") return v;
+  return amtDefault(h,st);
+}
 function setHState(d,id,st){
-  var e=getEntry(d);
-  if(st) e.habits[id]=(st==="mini")?"mini":true; else delete e.habits[id];
+  var e=getEntry(d), h=habitById(id);
+  if(st){
+    e.habits[id]=(st==="mini")?"mini":true;
+    if(hasAmt(h)) e.amt[id]=amtDefault(h,st);
+  }else{
+    delete e.habits[id];
+    if(e.amt) delete e.amt[id];
+  }
 }
 function miniPt(){ return Math.ceil(S.cfg.habit/2); }
 function freqOf(h){ return (h&&h.freq&&h.freq.type)?h.freq:{type:"daily"}; }
@@ -762,18 +811,48 @@ function updateCounter(){
   document.getElementById("cntNum").textContent=n+" / "+NOTE_LIMIT;
   c.classList.toggle("over", n>NOTE_LIMIT);
 }
+function amtChip(h,st){
+  if(!hasAmt(h)) return null;
+  var b=document.createElement("button");
+  b.className="amt"+(st?" on":"");
+  b.innerHTML=fmtNum(st?amtOf(cur,h,st):h.amt.target)+'<span class="u">'+esc(amtUnit(h))+'</span>';
+  b.title=st?"タップで量を修正":"目標 "+fmtNum(h.amt.target)+amtUnit(h);
+  b.addEventListener("click",function(ev){
+    ev.stopPropagation();
+    if(!st){
+      setHState(cur,h.id,"full");
+      queueSave(); renderHabits(); refreshPoints(); renderStats();
+      return;
+    }
+    editAmt(b,h,st);
+  });
+  return b;
+}
+function editAmt(b,h,st){
+  var v0=amtOf(cur,h,st);
+  b.classList.add("editing"); b.innerHTML="";
+  var inp=document.createElement("input");
+  inp.type="number"; inp.step="any"; inp.min="0"; inp.value=v0; inp.className="amtinp";
+  inp.setAttribute("inputmode","decimal");
+  var u=document.createElement("span"); u.className="u"; u.textContent=amtUnit(h);
+  b.appendChild(inp); b.appendChild(u);
+  var done=false;
+  function commit(){
+    if(done) return; done=true;
+    var v=parseFloat(inp.value);
+    if(isNaN(v)||v<0) v=v0;
+    getEntry(cur).amt[h.id]=v;
+    save(); renderHabits(); refreshPoints(); renderStats();
+  }
+  inp.addEventListener("click",function(ev){ ev.stopPropagation(); });
+  inp.addEventListener("blur",commit);
+  inp.addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); inp.blur(); } });
+  setTimeout(function(){ inp.focus(); inp.select(); },0);
+}
 function habitRow(h){
   var st=hState(peek(cur),h.id);
   var row=document.createElement("div");
   row.className="habit"+(st==="full"?" on":(st==="mini"?" mini":""));
-
-  var right="";
-  if(freqOf(h).type==="times"){
-    var c=habitWeekCount(h.id,cur), n=weekTarget(h);
-    right='<span class="wk'+(c>=n?" done":"")+'">今週 '+c+'/'+n+'</span>';
-  }else{
-    right='<span class="pt">+'+S.cfg.habit+'</span>';
-  }
 
   row.innerHTML=
     '<div class="box"></div>'+
@@ -781,10 +860,25 @@ function habitRow(h){
       (h.cue?'<span class="cue">'+esc(h.cue)+'</span>':'')+
     '</div>'+
     (h.mini?'<button class="minibtn'+(st==="mini"?" on":"")+'" title="'+esc(h.mini)+'">ミニ</button>':'')+
-    '<div class="p">'+right+'</div>';
+    '<div class="p"></div>';
+
+  var pbox=row.querySelector(".p");
+  var chip=amtChip(h,st);
+  if(chip) pbox.appendChild(chip);
+  if(freqOf(h).type==="times"){
+    var c=habitWeekCount(h.id,cur), n=weekTarget(h);
+    var wk=document.createElement("span");
+    wk.className="wk"+(c>=n?" done":"");
+    wk.textContent="今週 "+c+"/"+n;
+    pbox.appendChild(wk);
+  }else if(!chip){
+    var pt=document.createElement("span");
+    pt.className="pt"; pt.textContent="+"+S.cfg.habit;
+    pbox.appendChild(pt);
+  }
 
   row.addEventListener("click",function(ev){
-    if(ev.target.classList.contains("minibtn")) return;
+    if(ev.target.closest&&ev.target.closest(".minibtn,.amt")) return;
     setHState(cur,h.id, st==="full" ? "" : "full");
     queueSave(); renderHabits(); refreshPoints(); renderStats();
   });
@@ -955,11 +1049,11 @@ function renderHabitStats(y,m){
   var sumDone=0, sumTgt=0;
 
   S.habits.forEach(function(h){
-    var done=0, cells="";
+    var done=0, cells="", amtSum=0, amtDays=0;
     for(var d=1;d<=last;d++){
       var ds=ymd(new Date(y,m,d));
       var st=hState(peek(ds),h.id);
-      if(st) done+=(st==="mini"?0.5:1);
+      if(st){ done+=(st==="mini"?0.5:1); if(hasAmt(h)){ amtSum+=amtOf(ds,h,st); amtDays++; } }
       var cls = st==="full" ? "on" : (st==="mini" ? "half" : (d>upto ? "fut" : (isDue(h,ds)?"":"skip")));
       cells+='<span class="'+cls+'" title="'+(m+1)+'/'+d+'"></span>';
     }
@@ -980,6 +1074,11 @@ function renderHabitStats(y,m){
         '<span class="hs-pc">'+pc+'%</span>'+
       '</div>'+
       '<div class="hs-bar"><i style="width:'+Math.min(100,pc)+'%"></i></div>'+
+      (hasAmt(h)
+        ? '<div class="hs-amt">合計 <b>'+fmtNum(amtSum)+esc(amtUnit(h))+'</b>'+
+          (amtDays?' ／ 1回あたり <b>'+fmtNum(amtSum/amtDays)+esc(amtUnit(h))+'</b>':'')+
+          ' <span class="hs-goal">目標 '+fmtNum(h.amt.target)+esc(amtUnit(h))+'</span></div>'
+        : '')+
       '<div class="strip">'+cells+'</div>';
     box.appendChild(el);
   });
@@ -1126,6 +1225,31 @@ function renderSettings(){
     sub("きっかけ","例：歯磨きのあとに","cue");
     sub("ミニ版","例：1ページだけ読む","mini");
 
+    var ar=document.createElement("div"); ar.className="subrow";
+    ar.innerHTML='<span class="sublab">量</span>';
+    if(!h.amt||typeof h.amt!=="object") h.amt={target:0,unit:""};
+    var an=document.createElement("input");
+    an.type="number"; an.min="0"; an.step="any"; an.className="fnum";
+    an.setAttribute("inputmode","decimal");
+    an.value=h.amt.target?h.amt.target:"";
+    an.placeholder="—";
+    an.addEventListener("change",function(){
+      var v=parseFloat(an.value);
+      h.amt.target=(isNaN(v)||v<=0)?0:v;
+      an.value=h.amt.target?h.amt.target:"";
+      save(); renderToday();
+    });
+    var au=document.createElement("input");
+    au.type="text"; au.className="funit"; au.placeholder="単位（分・杯・ページ）";
+    au.value=h.amt.unit||"";
+    au.addEventListener("input",function(){ h.amt.unit=au.value; queueSave(); });
+    au.addEventListener("blur",function(){ renderToday(); });
+    ar.appendChild(an); ar.appendChild(au);
+    var ah=document.createElement("p");
+    ah.className="subhint";
+    ah.textContent="空欄なら量を使いません。チェックすると目標量が入り、数字をタップして直せます。";
+    blk.appendChild(ar); blk.appendChild(ah);
+
     var fr=document.createElement("div"); fr.className="subrow";
     fr.innerHTML='<span class="sublab">頻度</span>';
     var sel=document.createElement("select");
@@ -1250,7 +1374,7 @@ document.getElementById("clearUsed").addEventListener("click",function(){
 document.getElementById("addHabit").addEventListener("click",function(){
   var i=document.getElementById("newHabit"), n=i.value.trim();
   if(!n) return;
-  S.habits.push({id:uid(),name:n,cue:"",mini:"",freq:{type:"daily"}});
+  S.habits.push({id:uid(),name:n,cue:"",mini:"",freq:{type:"daily"},amt:{target:0,unit:""}});
   i.value=""; save(); renderSettings(); renderToday(); toast("追加しました");
 });
 document.getElementById("newHabit").addEventListener("keydown",function(e){ if(e.key==="Enter") document.getElementById("addHabit").click(); });
